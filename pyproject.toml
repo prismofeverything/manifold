@@ -1,0 +1,10 @@
+[project]
+name = "manifold"
+version = "0.0.1"
+description = "generalized adaptive learning"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy",
+  "matplotlib"
+]
