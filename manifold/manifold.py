@@ -27,7 +27,6 @@ def states_array(self, states):
 
 class Node():
     def __init__(self, combine, inputs, sensitivity=0.1, adaptation=0.1):
-        self.level = 0
         self.memory = 0
         self.sensitivity = sensitivity
         self.adaptation = adaptation
@@ -35,20 +34,7 @@ class Node():
 
         # may need to split this apart
         self.inputs = inputs
-        # self.membrane = np.zeros((len(inputs), len(inputs)))
 
-
-    def sample(self):
-        input_vector = read_source(
-            self.inputs)
-        input = self.combine(input_vector)
-        scaled = input * self.sensitivity
-        learned = self.memory * self.adaptation
-        error = scaled - learned
-        self.memory = error
-
-        return error
-        
 
     def sample(self):
         input_vector = read_source(
@@ -69,12 +55,17 @@ def add(states):
     return np.sum(states)
 
 
-def plot(x, y, xlabel='time', ylabel='level', title='plot'):
-    plt.plot(x, y)
+def plot(x, ys, labels=None, xlabel='time', ylabel='levels', title='plot'):
+    if labels is None:
+        labels = range(len(ys))
+
+    for y, label in zip(ys, labels):
+        plt.plot(x, y, label=label)
 
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.title(title)
+    plt.legend()
 
     plt.savefig(f'out/{title}.png')
 
@@ -89,22 +80,32 @@ def test_node():
 
     node = Node(add, off)
     history += [
-        node.sample()
+        (node.sample(), node.memory)
         for time in range(interval)]
 
     node.inputs = on
     history += [
-        node.sample()
+        (node.sample(), node.memory)
         for time in range(interval)]
 
     node.inputs = off
     history += [
-        node.sample()
+        (node.sample(), node.memory)
         for time in range(interval)]
 
-    plot(range(len(history)), history)
+    threads = list(zip(*history))
+
+    plot(
+        range(len(history)),
+        threads,
+        labels=['error', 'memory'])
 
     import ipdb; ipdb.set_trace()
+
+
+def test_homeostat():
+    # TODO: implement homeostat
+    pass
 
 
 def test_multiple_inputs():
