@@ -27,6 +27,10 @@ def states_array(self, states):
 
 class Node():
     def __init__(self, combine, inputs, sensitivity=0.1, adaptation=0.1):
+        # TODO memory goes with inputs (one per input)
+        #   level is overall after the combine (?)
+
+        self.level = 0
         self.memory = 0
         self.sensitivity = sensitivity
         self.adaptation = adaptation
