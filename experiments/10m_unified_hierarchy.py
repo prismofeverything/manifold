@@ -36,7 +36,8 @@ import numpy as np
 
 from manifold import (
     Channel, Constant, Node, Noise, PlasticChannel, WeightNormalizer,
-    hebbian, homeostatic_feedback, polar_sigmoid, run, tracker,
+    hebbian, history_as_dict, homeostatic_feedback, polar_sigmoid,
+    run_compiled, tracker,
 )
 
 
@@ -262,19 +263,27 @@ def main():
     sources.extend([I_a, I_b, Imem_a, Imem_b, Ihomeo_a, Ihomeo_b, noise_a, noise_b])
     sources.extend(norms)
 
+    # JAX-compiled execution (~70-90× faster than slow Python)
+    print("Running (JAX-compiled)...")
+    import time as _time
+    t0 = _time.time()
+    history_array, node_to_idx, _final = run_compiled(
+        sources, n_steps=N_STEPS, dt=1.0, seed=42,
+    )
+    elapsed = _time.time() - t0
+    print(f"  ran {N_STEPS} steps in {elapsed:.2f}s ({N_STEPS / elapsed:,.0f} steps/s)")
+
     # Observations: full complex state at every level
-    obs = {
-        "I_A": lambda: I_a.state,
-        "I_B": lambda: I_b.state,
+    obs_spec = {
+        "I_A": (I_a, "complex"),
+        "I_B": (I_b, "complex"),
     }
     for v in VERTICES:
-        obs[f"L2_f{v}"] = (lambda v=v: front[v].state)
-        obs[f"L2_b{v}"] = (lambda v=v: back[v].state)
+        obs_spec[f"L2_f{v}"] = (front[v], "complex")
+        obs_spec[f"L2_b{v}"] = (back[v], "complex")
         for combo in ARM_COMBOS:
-            obs[f"L1_{v}_{combo}"] = (lambda v=v, combo=combo: l1[v][combo].state)
-
-    print("Running...")
-    history = run(sources=sources, n_steps=N_STEPS, observers=obs)
+            obs_spec[f"L1_{v}_{combo}"] = (l1[v][combo], "complex")
+    history = history_as_dict(history_array, node_to_idx, obs_spec)
     times = list(range(N_STEPS))
 
     # ---- Analysis ----

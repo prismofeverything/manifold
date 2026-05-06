@@ -4,6 +4,9 @@ from .networks import Tile, add_lateral_excitation, add_lateral_inhibition, add_
 from .plot import plot, plot_complex, plot_trajectory
 from . import book
 from . import animate
+from . import transforms
+from . import jax_compile
+from .jax_compile import compile_to_jax, history_as_dict, run_compiled
 
 __all__ = [
     "Channel",
@@ -28,9 +31,11 @@ __all__ = [
     "plot",
     "plot_complex",
     "plot_trajectory",
+    "compile_to_jax",
     "polar",
     "polar_sigmoid",
     "run",
+    "run_compiled",
     "sigmoid_activity",
     "stdp_sin",
     "tracker",

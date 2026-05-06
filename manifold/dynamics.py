@@ -33,6 +33,10 @@ def adaptation(
         x = sensitivity * sum(xs)
         return x - s
 
+    f._meta = {"kind": "adaptation",
+               "params": {"sensitivity": float(sensitivity), "rate": float(rate)}}
+    g._meta = {"kind": "adaptation_output",
+               "params": {"sensitivity": float(sensitivity)}}
     return f, g
 
 
@@ -89,6 +93,10 @@ def polar(
     def g(s: complex, xs):
         return s
 
+    f._meta = {"kind": "polar",
+               "params": {"sensitivity": float(sensitivity), "rate": float(rate),
+                          "omega": float(omega), "coupling": float(coupling)}}
+    g._meta = {"kind": "identity_output", "params": {}}
     return f, g
 
 
@@ -116,6 +124,7 @@ def hebbian(eta: float = 0.001, decay: float = 0.0) -> Callable:
     def learn(w: complex, sv: complex, dv: complex, dt: float) -> complex:
         update = (sv * np.conj(dv)).real
         return w + dt * (eta * update - decay * w)
+    learn._meta = {"kind": "hebbian", "params": {"eta": float(eta), "decay": float(decay)}}
     return learn
 
 
@@ -150,6 +159,10 @@ def sigmoid_activity(
         return complex(max(0.0, r_new), s.imag)
     def g(s: complex, xs):
         return s
+    f._meta = {"kind": "sigmoid_activity",
+               "params": {"rate": float(rate), "gain": float(gain),
+                          "threshold": float(threshold)}}
+    g._meta = {"kind": "identity_output", "params": {}}
     return f, g
 
 
@@ -206,6 +219,11 @@ def polar_sigmoid(
     def g(s: complex, xs):
         return s
 
+    f._meta = {"kind": "polar_sigmoid",
+               "params": {"rate": float(rate), "gain": float(gain),
+                          "threshold": float(threshold),
+                          "omega": float(omega), "coupling": float(coupling)}}
+    g._meta = {"kind": "identity_output", "params": {}}
     return f, g
 
 
@@ -224,10 +242,13 @@ def tracker(rate: float = 0.01) -> Tuple[Callable, Callable]:
         return complex(r_new, s.imag)
     def g(s: complex, xs):
         return s
+    f._meta = {"kind": "tracker", "params": {"rate": float(rate)}}
+    g._meta = {"kind": "identity_output", "params": {}}
     return f, g
 
 
 def homeostatic_feedback(target: float = 0.5, gain: float = 5.0) -> Callable:
+    """(Marked transform; same shape as transforms.real_only_feedback.)"""
     """Channel transform turning a tracker's output into homeostatic feedback.
 
       transform(y) = -gain * (Re(y) - target)
@@ -243,6 +264,8 @@ def homeostatic_feedback(target: float = 0.5, gain: float = 5.0) -> Callable:
     """
     def transform(y: complex) -> complex:
         return complex(-gain * (y.real - target), 0.0)
+    transform._meta = {"kind": "real_only_feedback",
+                       "params": {"target": float(target), "gain": float(gain)}}
     return transform
 
 
@@ -266,6 +289,8 @@ def gated_hebbian(eta_max: float = 0.003, decay: float = 0.003) -> Callable:
             gate = 0.0
         update = (sv * np.conj(dv)).real
         return w + dt * (eta_max * gate * update - decay * w)
+    learn._meta = {"kind": "gated_hebbian",
+                   "params": {"eta_max": float(eta_max), "decay": float(decay)}}
     return learn
 
 
@@ -286,4 +311,5 @@ def stdp_sin(eta: float = 0.001, decay: float = 0.0) -> Callable:
         else:
             update = np.sin(np.angle(sv) - np.angle(dv))
         return w + dt * (eta * update - decay * w)
+    learn._meta = {"kind": "stdp_sin", "params": {"eta": float(eta), "decay": float(decay)}}
     return learn

@@ -36,50 +36,54 @@ import numpy as np
 
 from manifold import (
     Channel, Constant, Node, Noise, PlasticChannel, WeightNormalizer,
-    add_plastic_lateral, hebbian, homeostatic_feedback, polar_sigmoid,
-    run, tracker,
+    add_plastic_lateral, hebbian, history_as_dict, homeostatic_feedback,
+    polar_sigmoid, run_compiled, tracker,
 )
 
 
 VERTICES = list(itertools.product([0, 1], repeat=3))
 ARM_COMBOS = list(itertools.product([0, 1], repeat=3))
 
-# L1 (rich) — same as 10m
+# Slow-frequency variant: ω small (so phase-driven amplitude modulation is
+# slow), adaptation rates slow (so alternation is slow). Goal: a few clean
+# bistable cycles visible across the full N_STEPS.
+#
+# L1 (rich)
 IMAGE_DRIVE_L1 = 0.5
 INHIB_INTRATILE_L1 = 1.5
 EXCITE_CROSS_L1 = 0.2
 INHIB_CROSS_L1 = 0.6
 ADAPT_FEEDBACK_L1 = 1.0
-RATE_ADAPT_L1 = 0.005
+RATE_ADAPT_L1 = 0.001
 RATE_FAST_L1 = 0.1
 GAIN_L1 = 8.0
 THRESHOLD_L1 = 2.5
-OMEGA_L1 = 0.06
-OMEGA_JITTER_L1 = 0.015
+OMEGA_L1 = 0.012
+OMEGA_JITTER_L1 = 0.003
 
 # L2 (middle) — NO hand-wired cross-tile; plastic intra-layer instead
 IMAGE_DRIVE_L2 = 0.5
 INHIB_INTRATILE_L2 = 1.5
 ADAPT_FEEDBACK_L2 = 1.5
 RATE_FAST_L2 = 0.1
-RATE_ADAPT_L2 = 0.005
+RATE_ADAPT_L2 = 0.0008
 GAIN_L2 = 8.0
 THRESHOLD_L2 = 2.5
-OMEGA_L2 = 0.05
-OMEGA_JITTER_L2 = 0.015
+OMEGA_L2 = 0.010
+OMEGA_JITTER_L2 = 0.003
 
-# L3 (top) — same as 10m
+# L3 (top) — slowest dynamics; sets the dominant period
 INHIB_HI = 2.0
 ADAPT_FEEDBACK_HI = 2.0
 RATE_FAST_HI = 0.1
-RATE_ADAPT_HI = 0.003
-RATE_HOMEO_HI = 0.0003
+RATE_ADAPT_HI = 0.0004
+RATE_HOMEO_HI = 0.00004
 GAIN_HI = 6.0
 THRESHOLD_HI = 1.5
-OMEGA_HI = 0.03
+OMEGA_HI = 0.006
 HOMEO_TARGET = 0.4
 HOMEO_GAIN = 4.0
-NOISE_STD = 0.04
+NOISE_STD = 0.01
 
 # Plasticity
 ETA = 0.002
@@ -96,7 +100,7 @@ COUPLING_ALL = 1.0
 ETA_L2_INTRA = 0.0005
 DECAY_L2_INTRA = 0.003
 
-N_STEPS = 16000
+N_STEPS = 30000
 SEED = 42
 
 
@@ -262,15 +266,22 @@ def main():
     sources.extend([I_a, I_b, Imem_a, Imem_b, Ihomeo_a, Ihomeo_b, noise_a, noise_b])
     sources.extend(norms)
 
-    obs = {"I_A": lambda: I_a.state, "I_B": lambda: I_b.state}
-    for v in VERTICES:
-        obs[f"L2_f{v}"] = (lambda v=v: front[v].state)
-        obs[f"L2_b{v}"] = (lambda v=v: back[v].state)
-        for combo in ARM_COMBOS:
-            obs[f"L1_{v}_{combo}"] = (lambda v=v, combo=combo: l1[v][combo].state)
+    print("Running 10n (JAX-compiled, ~60-80× speedup over slow Python)...")
+    import time as _time
+    t0 = _time.time()
+    history_array, node_to_idx, _final = run_compiled(
+        sources, n_steps=N_STEPS, dt=1.0, seed=42,
+    )
+    elapsed = _time.time() - t0
+    print(f"  ran {N_STEPS} steps in {elapsed:.2f}s ({N_STEPS / elapsed:,.0f} steps/s)")
 
-    print("Running 10n (unified + L2 topology learning)...")
-    history = run(sources=sources, n_steps=N_STEPS, observers=obs)
+    obs_spec = {"I_A": (I_a, "complex"), "I_B": (I_b, "complex")}
+    for v in VERTICES:
+        obs_spec[f"L2_f{v}"] = (front[v], "complex")
+        obs_spec[f"L2_b{v}"] = (back[v], "complex")
+        for combo in ARM_COMBOS:
+            obs_spec[f"L1_{v}_{combo}"] = (l1[v][combo], "complex")
+    history = history_as_dict(history_array, node_to_idx, obs_spec)
     times = list(range(N_STEPS))
 
     # ---- Analysis: did L2's plastic intra-layer learn cube topology? ----
@@ -302,23 +313,36 @@ def main():
     for k, ws in cats.items():
         print(f"  {k:48s}  {np.mean(ws):+.4f} ± {np.std(ws):.4f}  (n={len(ws)})")
 
-    # Plot per-pattern amplitudes + L2 weight distribution
+    # Plot the cleanest signal — L3 amplitudes — without the L2 noise.
+    # L3 has the slowest dynamics so its alternation is the dominant
+    # visible bistability. L2 has higher-frequency wobble from plastic
+    # L1→L2 + phase rotation, so we plot it heavily smoothed for context.
     l2_a_keys = [f"L2_f{v}" if v[2] == 0 else f"L2_b{v}" for v in VERTICES]
     l2_b_keys = [f"L2_b{v}" if v[2] == 0 else f"L2_f{v}" for v in VERTICES]
-    l2_a_amp = [float(np.mean([abs(complex(history[k][t])) for k in l2_a_keys])) for t in range(N_STEPS)]
-    l2_b_amp = [float(np.mean([abs(complex(history[k][t])) for k in l2_b_keys])) for t in range(N_STEPS)]
-    L3_A = [abs(complex(history["I_A"][t])) for t in range(N_STEPS)]
-    L3_B = [abs(complex(history["I_B"][t])) for t in range(N_STEPS)]
+    l2_a_amp = np.array([float(np.mean([abs(complex(history[k][t])) for k in l2_a_keys])) for t in range(N_STEPS)])
+    l2_b_amp = np.array([float(np.mean([abs(complex(history[k][t])) for k in l2_b_keys])) for t in range(N_STEPS)])
+    L3_A = np.array([abs(complex(history["I_A"][t])) for t in range(N_STEPS)])
+    L3_B = np.array([abs(complex(history["I_B"][t])) for t in range(N_STEPS)])
+
+    def smooth(x, w=1500):
+        kernel = np.ones(w) / w
+        return np.convolve(x, kernel, mode="same")
 
     fig, axes = plt.subplots(2, 1, figsize=(11, 8))
-    axes[0].plot(times, l2_a_amp, color="tab:cyan", linewidth=0.6, label="L2 A subset", alpha=0.8)
-    axes[0].plot(times, l2_b_amp, color="tab:red", linewidth=0.6, label="L2 B subset", alpha=0.8)
-    axes[0].plot(times, L3_A, color="tab:green", linewidth=1.2, label="L3 I_A")
-    axes[0].plot(times, L3_B, color="tab:olive", linewidth=1.2, label="L3 I_B")
+
+    # L3 alone — clean alternation
+    axes[0].plot(times, L3_A, color="tab:green", linewidth=1.6, label="L3 I_A")
+    axes[0].plot(times, L3_B, color="tab:olive", linewidth=1.6, label="L3 I_B")
+    # Heavy smoothing on L2 envelope (low-pass to extract slow trend)
+    axes[0].plot(times, smooth(l2_a_amp), color="tab:cyan", linewidth=1.0,
+                 alpha=0.7, label="L2 A subset (1500-step avg)")
+    axes[0].plot(times, smooth(l2_b_amp), color="tab:red", linewidth=1.0,
+                 alpha=0.7, label="L2 B subset (1500-step avg)")
     axes[0].set_ylabel("amplitude")
-    axes[0].set_title("10n — Unified + L2 topology learning: amplitude bistability")
+    axes[0].set_title("10n — Unified + L2 topology learning: low-frequency bistability")
     axes[0].legend(fontsize=9, loc="upper right")
     axes[0].grid(alpha=0.3)
+    axes[0].set_ylim(-0.05, 1.05)
 
     cat_names = list(cats.keys())
     means = [np.mean(cats[k]) for k in cat_names]
