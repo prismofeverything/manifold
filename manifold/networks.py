@@ -6,18 +6,16 @@ expose `feature(i)` for accessing individual nodes and `connect_to(other,
 weight)` for wiring feature-matched between-tile connections, the
 Sompolinsky V1 architecture.
 
-Internal connections are realized as `Channel`s whose transform scales
-the source value by `coupling`. The polar dynamics' magnitude-weighted
-coupling sum then produces the proper weighted-Kuramoto phase update,
-so per-channel strengths can vary even when the dynamics' own coupling
-parameter is held at 1.
+Lateral-connection helpers (`add_lateral_inhibition`, `add_plastic_lateral`,
+`add_mexican_hat`) systematize the connectivity patterns we kept wiring
+ad-hoc in experiments. They mutate the nodes in place by adding channels.
 """
 
-from typing import List, Optional, Sequence
+from typing import Callable, List, Optional, Sequence
 
 import numpy as np
 
-from .core import Channel, Node
+from .core import Channel, Node, PlasticChannel
 from .dynamics import polar
 
 
@@ -79,3 +77,96 @@ class Tile:
             other.nodes[i].add_channel(
                 Channel(self.nodes[i], transform=lambda y, w=weight: w * y)
             )
+
+
+# ---- Lateral connectivity helpers ----------------------------------------
+
+def add_lateral_inhibition(nodes: Sequence[Node], strength: float = 1.0) -> None:
+    """Wire mutual inhibition between every pair of nodes (no self-loops).
+
+    The basic competitive mechanism: each node inhibits every other in the
+    group, so they fight for activity. Used as winner-take-all within a
+    tile, between competing populations, etc.
+    """
+    for i, ni in enumerate(nodes):
+        for j, nj in enumerate(nodes):
+            if i == j:
+                continue
+            ni.add_channel(Channel(nj, transform=lambda y, s=strength: -s * y))
+
+
+def add_lateral_excitation(nodes: Sequence[Node], strength: float = 1.0) -> None:
+    """Wire mutual excitation between every pair (no self-loops).
+
+    Used to bind a coherent population that should activate together.
+    """
+    for i, ni in enumerate(nodes):
+        for j, nj in enumerate(nodes):
+            if i == j:
+                continue
+            ni.add_channel(Channel(nj, transform=lambda y, s=strength: s * y))
+
+
+def add_plastic_lateral(
+    nodes: Sequence[Node],
+    learn: Callable,
+    init_weight: float = 0.05,
+    init_random: bool = True,
+    seed: Optional[int] = None,
+) -> List[PlasticChannel]:
+    """All-to-all plastic intra-layer connections (returns the channels).
+
+    Each node receives a `PlasticChannel` from every other node, with
+    weights either tiny-random (default) or constant. The learning rule
+    is whatever you pass — typically `hebbian` for co-activation
+    learning, `stdp_sin` for phase-based, etc.
+
+    Returned channel list is suitable for passing to a `WeightNormalizer`.
+
+    This is the substrate for *topology learning* — letting a network
+    discover its own intra-layer connectivity from co-activation
+    statistics, rather than hand-wiring it. See
+    `project_topology_learning.md` memory for the underlying insight.
+    """
+    rng = np.random.default_rng(seed)
+    channels: List[PlasticChannel] = []
+    for ni in nodes:
+        for nj in nodes:
+            if ni is nj:
+                continue
+            w = init_weight * (rng.random() if init_random else 1.0)
+            ch = PlasticChannel(nj, dest=ni, weight=w, learn=learn)
+            ni.add_channel(ch)
+            channels.append(ch)
+    return channels
+
+
+def add_mexican_hat(
+    nodes: Sequence[Node],
+    positions: Sequence,
+    exc: float = 1.0,
+    inh: float = 0.5,
+    exc_radius: float = 1.0,
+    inh_radius: float = 2.0,
+) -> None:
+    """Distance-based lateral connectivity (Mexican-hat / center-surround).
+
+    Each pair of nodes is wired excitatorily if their positions are
+    within `exc_radius`, inhibitorily if within `inh_radius` (and beyond
+    `exc_radius`), and unconnected if farther. This is the standard
+    cortical local-circuit motif: short-range excitation, longer-range
+    inhibition.
+
+    `positions[i]` is the spatial position of `nodes[i]` (any tuple/array
+    that works with numpy's norm).
+    """
+    pos = [np.asarray(p, dtype=float) for p in positions]
+    for i, ni in enumerate(nodes):
+        for j, nj in enumerate(nodes):
+            if i == j:
+                continue
+            d = float(np.linalg.norm(pos[i] - pos[j]))
+            if d < exc_radius:
+                ni.add_channel(Channel(nj, transform=lambda y, s=exc: s * y))
+            elif d < inh_radius:
+                ni.add_channel(Channel(nj, transform=lambda y, s=inh: -s * y))

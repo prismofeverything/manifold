@@ -1,6 +1,6 @@
 from .core import Channel, Constant, Environment, Node, Noise, PlasticChannel, Source, StateView, WeightNormalizer, run
 from .dynamics import adaptation, gated_hebbian, hebbian, homeostatic_feedback, kuramoto, polar, sigmoid_activity, stdp_sin, tracker
-from .networks import Tile
+from .networks import Tile, add_lateral_excitation, add_lateral_inhibition, add_mexican_hat, add_plastic_lateral
 from .plot import plot, plot_complex, plot_trajectory
 
 __all__ = [
@@ -15,6 +15,10 @@ __all__ = [
     "Tile",
     "WeightNormalizer",
     "adaptation",
+    "add_lateral_excitation",
+    "add_lateral_inhibition",
+    "add_mexican_hat",
+    "add_plastic_lateral",
     "gated_hebbian",
     "hebbian",
     "homeostatic_feedback",
