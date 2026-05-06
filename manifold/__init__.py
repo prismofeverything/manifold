@@ -1,7 +1,8 @@
 from .core import Channel, Constant, Environment, Node, Noise, PlasticChannel, Source, StateView, WeightNormalizer, run
-from .dynamics import adaptation, gated_hebbian, hebbian, homeostatic_feedback, kuramoto, polar, sigmoid_activity, stdp_sin, tracker
+from .dynamics import adaptation, gated_hebbian, hebbian, homeostatic_feedback, kuramoto, polar, polar_sigmoid, sigmoid_activity, stdp_sin, tracker
 from .networks import Tile, add_lateral_excitation, add_lateral_inhibition, add_mexican_hat, add_plastic_lateral
 from .plot import plot, plot_complex, plot_trajectory
+from . import book
 
 __all__ = [
     "Channel",
@@ -27,6 +28,7 @@ __all__ = [
     "plot_complex",
     "plot_trajectory",
     "polar",
+    "polar_sigmoid",
     "run",
     "sigmoid_activity",
     "stdp_sin",

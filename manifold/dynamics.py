@@ -153,6 +153,62 @@ def sigmoid_activity(
     return f, g
 
 
+def polar_sigmoid(
+    rate: float = 0.1,
+    gain: float = 8.0,
+    threshold: float = 2.5,
+    omega: float = 0.0,
+    coupling: float = 1.0,
+) -> Tuple[Callable, Callable]:
+    """Sigmoidal amplitude + Kuramoto phase — both axes at work.
+
+    Combines `sigmoid_activity` (bounded amplitude with sigmoidal target,
+    used for bistable competition) with `polar` (intrinsic rotation +
+    magnitude-weighted Kuramoto coupling on phase). State is complex:
+
+      r_target = sigmoid(gain * sum(xi.real) - threshold)
+      r_new    = max(0, r + dt * rate * (r_target - r))
+      dtheta   = omega + coupling * sum |xi| * sin(arg(xi) - theta)
+      s_new    = r_new * exp(i * (theta + dt*dtheta))
+
+    Same channels do dual work:
+      - positive transform → excite (r↑) AND in-phase coupling
+      - negative transform → inhibit (r↓) AND anti-phase coupling (since
+        arg(-x) = arg(x) + π, so sin(arg + π - theta) is the anti-phase
+        Kuramoto term)
+
+    Use this when an experiment should produce *both* a bistable
+    amplitude pattern (which features are active) AND a phase-coherence
+    pattern (how the active features are bound together). The unified
+    substrate the project's complex-state choice was set up for.
+
+    Singularity: at s = 0 the phase is undefined; we default theta = 0.
+    Initialize state with a small nonzero magnitude when ω != 0 so the
+    phase has somewhere to rotate from.
+    """
+    def f(s: complex, xs, dt: float) -> complex:
+        r = abs(s)
+        theta = np.angle(s) if r > 1e-12 else 0.0
+
+        drive = sum(xi.real for xi in xs)
+        target_r = 1.0 / (1.0 + np.exp(-(gain * drive - threshold)))
+        r_new = r + dt * rate * (target_r - r)
+        r_new = max(0.0, r_new)
+
+        if coupling and xs:
+            coupling_term = sum(abs(xi) * np.sin(np.angle(xi) - theta) for xi in xs)
+        else:
+            coupling_term = 0.0
+        theta_new = theta + dt * (omega + coupling * coupling_term)
+
+        return r_new * np.exp(1j * theta_new)
+
+    def g(s: complex, xs):
+        return s
+
+    return f, g
+
+
 def tracker(rate: float = 0.01) -> Tuple[Callable, Callable]:
     """Slow leaky integrator: state tracks the sum of its real-part inputs.
     Output = state (so downstream channels read the integrated value).
