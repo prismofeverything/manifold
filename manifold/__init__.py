@@ -3,6 +3,7 @@ from .dynamics import adaptation, gated_hebbian, hebbian, homeostatic_feedback, 
 from .networks import Tile, add_lateral_excitation, add_lateral_inhibition, add_mexican_hat, add_plastic_lateral
 from .plot import plot, plot_complex, plot_trajectory
 from . import book
+from . import animate
 
 __all__ = [
     "Channel",
