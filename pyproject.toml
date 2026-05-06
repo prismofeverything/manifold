@@ -8,6 +8,8 @@ dependencies = [
   "numpy",
   "matplotlib",
   "ipdb>=0.13.13",
+  "jax>=0.4.30",
+  "jaxlib>=0.4.30",
 ]
 
 [build-system]
